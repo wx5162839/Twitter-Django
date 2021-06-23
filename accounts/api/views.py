@@ -12,7 +12,6 @@ from django.contrib.auth import (
 )
 from accounts.api.serializers import SignupSerializer, LoginSerializer
 
-
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
@@ -20,7 +19,6 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = User.objects.all().order_by('-date_joined')
     serializer_class = UserSerializer
     permission_classes = (permissions.IsAuthenticated,)
-
 
 class AccountViewSet(viewsets.ViewSet):
     permission_classes = (AllowAny,)

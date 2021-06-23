@@ -1,47 +1,100 @@
+from accounts.api.serializers import UserSerializer
 from django.contrib.auth.models import User
-from rest_framework import serializers, exceptions
+from rest_framework import permissions
+from rest_framework import viewsets
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
+from django.contrib.auth import (
+    authenticate as django_authenticate,
+    login as django_login,
+    logout as django_logout,
+)
+from accounts.api.serializers import SignupSerializer, LoginSerializer
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ('username', 'email')
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint that allows users to be viewed or edited.
+    """
+    queryset = User.objects.all().order_by('-date_joined')
+    serializer_class = UserSerializer
+    permission_classes = (permissions.IsAuthenticated,)
 
 
-class SignupSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(max_length=20, min_length=6)
-    password = serializers.CharField(max_length=20, min_length=6)
-    email = serializers.EmailField()
+class AccountViewSet(viewsets.ViewSet):
+    permission_classes = (AllowAny,)
+    serializer_class = SignupSerializer
 
-    class Meta:
-        model = User
-        fields = ('username', 'email', 'password')
+    @action(methods=['POST'], detail=False)
+    def login(self, request):
+        """
+        默认的 username 是 admin, password 也是 admin
+        """
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "success": False,
+                "message": "Please check input",
+                "errors": serializer.errors,
+            }, status=400)
+        username = serializer.validated_data['username']
+        password = serializer.validated_data['password']
+        user = django_authenticate(username=username, password=password)
+        if not user or user.is_anonymous:
+            return Response({
+                "success": False,
+                "message": "username and password does not match",
+            }, status=400)
+        django_login(request, user)
+        return Response({
+            "success": True,
+            "user": UserSerializer(instance=user).data,
+        })
 
-    def validate(self, data):
-        # TODO<HOMEWORK> 增加验证 username 是不是只由给定的字符集合构成
-        if User.objects.filter(username=data['username'].lower()).exists():
-            raise exceptions.ValidationError({
-                'message': 'This email address has been occupied.'
-            })
-        if User.objects.filter(email=data['email'].lower()).exists():
-            raise exceptions.ValidationError({
-                'message': 'This email address has been occupied.'
-            })
-        return data
+    @action(methods=['POST'], detail=False)
+    def logout(self, request):
+        """
+        登出当前用户
+        """
+        django_logout(request)
+        return Response({"success": True})
 
-    def create(self, validated_data):
-        username = validated_data['username'].lower()
-        email = validated_data['email'].lower()
-        password = validated_data['password']
+    @action(methods=['POST'], detail=False)
+    def signup(self, request):
+        """
+        使用 username, email, password 进行注册
+        """
+        # 不太优雅的写法
+        # username = request.data.get('username')
+        # if not username:
+        #     return Response("username required", status=400)
+        # password = request.data.get('password')
+        # if not password:
+        #     return Response("password required", status=400)
+        # if User.objects.filter(username=username).exists():
+        #     return Response("password required", status=400)
+        serializer = SignupSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'message': "Please check input",
+                'errors': serializer.errors,
+            }, status=400)
 
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password,
-        )
-        return user
+        user = serializer.save()
+        django_login(request, user)
+        return Response({
+            'success': True,
+            'user': UserSerializer(user).data,
+        })
 
-
-class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField()
+    @action(methods=['GET'], detail=False)
+    def login_status(self, request):
+        """
+        查看用户当前的登录状态和具体信息
+        """
+        data = {'has_logged_in': request.user.is_authenticated}
+        if request.user.is_authenticated:
+            data['user'] = UserSerializer(request.user).data
+        return Response(data)

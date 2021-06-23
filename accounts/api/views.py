@@ -36,14 +36,26 @@ class AccountViewSet(viewsets.ViewSet):
                 "message": "Please check input",
                 "errors": serializer.errors,
             }, status=400)
+        # validation OK, then login
         username = serializer.validated_data['username']
         password = serializer.validated_data['password']
+
+        # user not exists check
+        # User.objects.filter 筛选出需要的内容
+        if not User.objects.filter(username=username).exists():
+            return Response({
+                "success": False,
+                "message": "username does not exist.",
+            }, status=400)
+
         user = django_authenticate(username=username, password=password)
         if not user or user.is_anonymous:
             return Response({
                 "success": False,
                 "message": "username and password does not match",
             }, status=400)
+
+        # call login api
         django_login(request, user)
         return Response({
             "success": True,
@@ -64,6 +76,7 @@ class AccountViewSet(viewsets.ViewSet):
         使用 username, email, password 进行注册
         """
         # 不太优雅的写法
+        # serializer会带一些验证机制，最好去用serializer去验证
         # username = request.data.get('username')
         # if not username:
         #     return Response("username required", status=400)
@@ -92,6 +105,8 @@ class AccountViewSet(viewsets.ViewSet):
         """
         查看用户当前的登录状态和具体信息
         """
+        # anonymous user return false; //没登入
+        # non-anonymous user return true
         data = {'has_logged_in': request.user.is_authenticated}
         if request.user.is_authenticated:
             data['user'] = UserSerializer(request.user).data
